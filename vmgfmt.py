@@ -36,14 +36,24 @@ def loadvmg(fn):
 
 def loadcsv(fn):
     def transdate(date):
+        if len(date) == 0:
+            date = "1900.01.01 00:00"
         return time.strptime(date, "%Y.%m.%d %H:%M")
     fp = open(fn)
     smslst = []
     for line in fp.readlines():
         line = line.strip()
         line = line.split(',')
-        fromname = line[2][1:-1]
-        toname = "None"
+        if len(line) <= 2:
+            continue
+        if line[1] == "submit": # send
+            fromname = "me"
+            toname = line[3][1:-1]
+        elif line[1] == "deliver": # receive
+            fromname = line[2][1:-1]
+            toname = "me"
+        else:
+            continue
         date = transdate(line[5][1:-1])
         content = line[7][1:-1]
         smslst.append((date, fromname, toname, content))
