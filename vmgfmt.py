@@ -5,14 +5,12 @@ import string
 import time
 
 
-def transDateVmg(date):
-    # decode time format
-    return time.strptime(date, "%I:%M%p, %Y %b %d")
-
-
 # TODO:
 # rewrite this parse function
 def loadvmg(fn):
+    def transDateVmg(date):
+        # decode time format
+        return time.strptime(date, "%I:%M%p, %Y %b %d")
     with open(fn) as fp:
         fromname, toname = "", ""
         content = ""
@@ -36,6 +34,32 @@ def loadvmg(fn):
     return (date, fromname, toname, content)
 
 
+def loadcsv(fn):
+    def transdate(date):
+        return time.strptime(date, "%Y.%m.%d %H:%M")
+    fp = open(fn)
+    smslst = []
+    for line in fp.readlines():
+        line = line.strip()
+        line = line.split(',')
+        fromname = line[2][1:-1]
+        toname = "None"
+        date = transdate(line[5][1:-1])
+        content = line[7][1:-1]
+        smslst.append((date, fromname, toname, content))
+    return smslst
+
+
+def loadSMS(fn):
+    _, fntype = os.path.splitext(fn)
+    if fntype == ".vmg":
+        return [loadvmg(fn)]
+    elif fntype == ".csv":
+        return loadcsv(fn)
+    else:
+        return None
+
+
 # iter walk vmg file
 def walkDir(path):
     vmglst = []
@@ -44,7 +68,9 @@ def walkDir(path):
         if os.path.isdir(f):
             vmglst.extend(walkDir(f))
         elif os.path.isfile(f):
-            vmglst.append(loadvmg(f))
+            ret = loadSMS(f)
+            if ret:
+                vmglst.extend(ret)
         else:
             pass
     return vmglst
