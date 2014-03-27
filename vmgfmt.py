@@ -5,8 +5,6 @@ import string
 import time
 
 
-# TODO:
-# rewrite this parse function
 def loadvmg(fn):
     def transDateVmg(date):
         # decode time format
@@ -34,6 +32,98 @@ def loadvmg(fn):
     return (date, fromname, toname, content)
 
 
+def loadvmg2(fn):
+    vmsg = ("BEGIN:VMSG", "END:VMSG")
+    venv = ("BEGIN:VENV", "END:VENV")
+    vcard = ("BEGIN:VCARD", "END:VCARD")
+    vbody = ("BEGIN:VBODY", "END:VBODY")
+
+    def transDateVmg(date):
+        return time.strptime(date, "%I:%M%p, %Y %b %d")
+
+    def extract(s, headtail):
+        head, tail = headtail[0], headtail[1]
+        begin = s.index(head)
+        offset = begin + len(head)
+        cnt = 1
+        while 1:
+            idx0 = s.find(head, offset)
+            idx1 = s.find(tail, offset)
+# 找到开始符号与结束符号,并且开始符号较小,这样,还需要再找到一个结束符号
+            if idx0 != -1 and idx1 != -1 and idx0 < idx1:
+                offset = idx1 + len(tail)
+# 只找到结束符号,或者
+# 找到开始符号与结束符号,并且开始符号较大,则可以结束
+            elif (idx0 == -1 and idx1 != -1) or (idx0 != -1 and idx1 != -1 and idx0 > idx1):
+                end = idx1
+                break
+            else:
+                print idx0, idx1
+                raise ValueError
+        return s[begin + len(head): end].strip()
+
+    def parseKV(cnt):
+        cnt = cnt.strip()
+        cnt = [line.split(":") for line in cnt.split("\n")]
+        return {v[0]: v[1].strip() for v in cnt}
+
+    def parseVmsg(cnt):
+        cnt = extract(cnt, vmsg)
+        d = {}
+        card = extract(cnt, vcard)
+        env = extract(cnt, venv)
+        d.update(parseKV(cnt[:cnt.index("BEGIN")]))
+        d["card"] = parseVcard(card)
+        d["env"] = parseVenv(env)
+        return d
+
+    def parseVcard(cnt):
+        return parseKV(cnt)
+
+    def parseVenv(cnt):
+        card = extract(cnt, vcard)
+        env = extract(cnt, venv)
+        d = {}
+        d["card"] = parseVcard(card)
+        d["env"] = parseVenv2(env)
+        return d
+
+    def parseVenv2(cnt):
+        d = {}
+        d["body"] = parseVbody(extract(cnt, vbody))
+        return d
+
+    def parseVbody(cnt):
+        d = {}
+        try:
+            date = extract(cnt, ("Date:", "\n"))
+            linepos = cnt.index('\n')
+            d["text"] = cnt[linepos + 1:]
+        except ValueError:
+# 处理空短信的异常情况
+            date = cnt[cnt.index("Date:")+len("Date:"):]
+            d["text"] = ""
+        d["date"] = transDateVmg(date)
+        return d
+    fp = open(fn)
+    content = fp.read()
+    fp.close()
+    d = parseVmsg(content)
+# 处理没有存储号码对应的名字的异常问题
+    try:
+        fromname = d["card"]["FN;CHARSET=UTF-8"]
+    except KeyError:
+        fromname = d["card"]["FN"]
+    try:
+        toname = d["env"]["card"]["FN;CHARSET=UTF-8"]
+    except KeyError:
+        toname = d["env"]["card"]["FN"]
+    ret = (d["env"]["env"]["body"]["date"],
+           fromname, toname,
+           d["env"]["env"]["body"]["text"])
+    return ret
+
+
 def loadcsv(fn):
     def transdate(date):
         if len(date) == 0:
@@ -46,10 +136,10 @@ def loadcsv(fn):
         line = line.split(',')
         if len(line) <= 2:
             continue
-        if line[1] == "submit": # send
+        if line[1] == "submit":  # send
             fromname = "me"
             toname = line[3][1:-1]
-        elif line[1] == "deliver": # receive
+        elif line[1] == "deliver":  # receive
             fromname = line[2][1:-1]
             toname = "me"
         else:
@@ -63,7 +153,7 @@ def loadcsv(fn):
 def loadSMS(fn):
     _, fntype = os.path.splitext(fn)
     if fntype == ".vmg":
-        return [loadvmg(fn)]
+        return [loadvmg2(fn)]
     elif fntype == ".csv":
         return loadcsv(fn)
     else:
@@ -113,18 +203,21 @@ def outputTimeline(vmglst, outdir="."):
 
 
 def usage(name):
-    print "%s inputdir [outputdir=.]" % (name)
+    print "%s [inputdir=.] [outputdir=.]" % (name)
+    print "\tsupport VMG, CSV format"
     sys.exit()
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 2:
-        outdir = "."
+    if len(sys.argv) == 1:
+        indir, outdir = ".", "."
+    elif len(sys.argv) == 2:
+        indir, outdir = sys.argv[1], "."
     elif len(sys.argv) == 3:
-        outdir = sys.argv[2]
+        indir, outdir = sys.argv[1], sys.argv[2]
     else:
         usage(sys.argv[0])
-    print "walk dir ", sys.argv[1]
-    msg = walkDir(sys.argv[1])
+    print "walk dir ", indir
+    msg = walkDir(indir)
     print "outputTimeline to ", outdir
     outputTimeline(msg, outdir)
